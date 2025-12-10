@@ -6,21 +6,65 @@ import expo.modules.fetcher.utils.RequestBodyHelper
 import expo.modules.fetcher.utils.StatusTextHelper
 import expo.modules.fetcher.utils.CustomSchemeInterceptor
 import expo.modules.fetcher.utils.CustomSchemeRedirectException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import okhttp3.JavaNetCookieJar
+import okhttp3.Cookie
+import okhttp3.CookieJar
+import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
+import java.net.HttpCookie
 import java.util.concurrent.TimeUnit
 
 class FetchService(private val cookieService: CookieService) {
 
   private val customSchemeInterceptor = CustomSchemeInterceptor()
   
+  // Custom CookieJar implementation that bridges to Java's CookieManager
+  private val customCookieJar = object : CookieJar {
+    override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
+      val uri = url.toUri()
+      cookies.forEach { cookie ->
+        // Convert OkHttp cookie to HttpCookie format
+        val cookieString = "${cookie.name}=${cookie.value}; " +
+          "Domain=${cookie.domain}; " +
+          "Path=${cookie.path}" +
+          (if (cookie.expiresAt > 0) "; Max-Age=${(cookie.expiresAt - System.currentTimeMillis()) / 1000}" else "") +
+          (if (cookie.secure) "; Secure" else "") +
+          (if (cookie.httpOnly) "; HttpOnly" else "")
+        
+        try {
+          val httpCookie = HttpCookie.parse(cookieString).firstOrNull()
+          if (httpCookie != null) {
+            cookieService.cookieManager.cookieStore.add(uri, httpCookie)
+          }
+        } catch (e: Exception) {
+          android.util.Log.w("ExpoFetcher", "Failed to save cookie: ${e.message}")
+        }
+      }
+    }
+
+    override fun loadForRequest(url: HttpUrl): List<Cookie> {
+      val uri = url.toUri()
+      val cookies = cookieService.cookieManager.cookieStore.get(uri)
+      
+      return cookies.mapNotNull { httpCookie ->
+        Cookie.Builder()
+          .name(httpCookie.name)
+          .value(httpCookie.value)
+          .domain(httpCookie.domain ?: url.host)
+          .path(httpCookie.path ?: "/")
+          .apply {
+            if (httpCookie.secure) secure()
+            if (httpCookie.isHttpOnly) httpOnly()
+          }
+          .build()
+      }
+    }
+  }
+  
   private val client = OkHttpClient.Builder()
-    .cookieJar(JavaNetCookieJar(cookieService.cookieManager))
+    .cookieJar(customCookieJar)
     .addInterceptor(customSchemeInterceptor)
     .followRedirects(false)
     .followSslRedirects(false)
@@ -29,7 +73,7 @@ class FetchService(private val cookieService: CookieService) {
     .writeTimeout(30, TimeUnit.SECONDS)
     .build()
 
-  suspend fun performFetch(url: String, init: FetchInit?): Map<String, Any?> = withContext(Dispatchers.IO) {
+  fun performFetch(url: String, init: FetchInit?): Map<String, Any?> {
     val method = init?.method ?: "GET"
     val followRedirects = init?.redirect != "manual" && init?.redirect != "error"
 
