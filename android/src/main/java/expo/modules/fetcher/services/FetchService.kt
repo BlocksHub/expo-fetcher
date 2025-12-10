@@ -137,7 +137,7 @@ class FetchService(private val cookieService: CookieService) {
 
       response.close()
 
-      mapOf(
+      return mapOf(
         "status" to response.code,
         "statusText" to statusText,
         "headers" to headersArray,
@@ -151,7 +151,7 @@ class FetchService(private val cookieService: CookieService) {
       android.util.Log.d("ExpoFetcher", "performFetch: ✅ Successfully captured custom scheme redirect")
       android.util.Log.d("ExpoFetcher", "performFetch: Custom scheme URL: ${e.customSchemeUrl}")
       
-      mapOf(
+      return mapOf(
         "status" to 302,
         "statusText" to "Found",
         "headers" to listOf("Location", e.customSchemeUrl, "X-Redirect-Type", "custom-scheme"),
