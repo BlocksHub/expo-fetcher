@@ -1,6 +1,6 @@
 {
   "name": "expo-fetcher",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "A Native fetch API for Expo",
   "main": "build/index.js",
   "types": "build/index.d.ts",
