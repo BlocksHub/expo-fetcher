@@ -9,7 +9,7 @@ Expo Fetcher simplifies and unifies HTTP requests in Expo, React Native, and nat
 - Redirect control and error handling
 - Full support for HTTP methods and body types
 - Seamless integration with Expo and React Native
-- Native implementation for iOS and Android(soon)
+- Native implementation for iOS and Android
 
 ---
 
