@@ -2,10 +2,9 @@ package expo.modules.fetcher.services
 
 import android.util.Base64
 import expo.modules.fetcher.types.FetchInit
+import expo.modules.fetcher.types.FetchResponse
 import expo.modules.fetcher.utils.RequestBodyHelper
 import expo.modules.fetcher.utils.StatusTextHelper
-import expo.modules.fetcher.utils.CustomSchemeInterceptor
-import expo.modules.fetcher.utils.CustomSchemeRedirectException
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
@@ -18,14 +17,10 @@ import java.util.concurrent.TimeUnit
 
 class FetchService(private val cookieService: CookieService) {
 
-  private val customSchemeInterceptor = CustomSchemeInterceptor()
-  
-  // Custom CookieJar implementation that bridges to Java's CookieManager
   private val customCookieJar = object : CookieJar {
     override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
       val uri = url.toUri()
       cookies.forEach { cookie ->
-        // Convert OkHttp cookie to HttpCookie format
         val cookieString = "${cookie.name}=${cookie.value}; " +
           "Domain=${cookie.domain}; " +
           "Path=${cookie.path}" +
@@ -39,7 +34,6 @@ class FetchService(private val cookieService: CookieService) {
             cookieService.cookieManager.cookieStore.add(uri, httpCookie)
           }
         } catch (e: Exception) {
-          android.util.Log.w("ExpoFetcher", "Failed to save cookie: ${e.message}")
         }
       }
     }
@@ -65,7 +59,6 @@ class FetchService(private val cookieService: CookieService) {
   
   private val client = OkHttpClient.Builder()
     .cookieJar(customCookieJar)
-    .addInterceptor(customSchemeInterceptor)
     .followRedirects(false)
     .followSslRedirects(false)
     .connectTimeout(30, TimeUnit.SECONDS)
@@ -73,11 +66,9 @@ class FetchService(private val cookieService: CookieService) {
     .writeTimeout(30, TimeUnit.SECONDS)
     .build()
 
-  fun performFetch(url: String, init: FetchInit?): Map<String, Any?> {
+  fun performFetch(url: String, init: FetchInit?): FetchResponse {
     val method = init?.method ?: "GET"
     val followRedirects = init?.redirect != "manual" && init?.redirect != "error"
-
-    android.util.Log.d("ExpoFetcher", "performFetch START: $method $url followRedirects=$followRedirects")
 
     val requestBuilder = Request.Builder().url(url)
 
@@ -115,16 +106,10 @@ class FetchService(private val cookieService: CookieService) {
     try {
       val response = clientToUse.newCall(request).execute()
 
-      android.util.Log.d("ExpoFetcher", "performFetch RESPONSE: ${response.code} ${response.request.url}")
-      android.util.Log.d("ExpoFetcher", "Cookies in store: ${cookieService.cookieManager.cookieStore.cookies.size}")
-
       val headersArray = mutableListOf<String>()
       response.headers.forEach { (name, value) ->
         headersArray.add(name)
         headersArray.add(value)
-        if (name.equals("Set-Cookie", ignoreCase = true)) {
-          android.util.Log.d("ExpoFetcher", "Set-Cookie: $value")
-        }
       }
 
       val bodyBytes = response.body?.bytes() ?: ByteArray(0)
@@ -137,32 +122,17 @@ class FetchService(private val cookieService: CookieService) {
 
       response.close()
 
-      return mapOf(
-        "status" to response.code,
-        "statusText" to statusText,
-        "headers" to headersArray,
-        "bodyBase64" to bodyBase64,
-        "url" to response.request.url.toString(),
-        "ok" to (response.code in 200..299),
-        "redirected" to wasRedirected,
-        "type" to "basic"
-      )
-    } catch (e: CustomSchemeRedirectException) {
-      android.util.Log.d("ExpoFetcher", "performFetch: ✅ Successfully captured custom scheme redirect")
-      android.util.Log.d("ExpoFetcher", "performFetch: Custom scheme URL: ${e.customSchemeUrl}")
-      
-      return mapOf(
-        "status" to 302,
-        "statusText" to "Found",
-        "headers" to listOf("Location", e.customSchemeUrl, "X-Redirect-Type", "custom-scheme"),
-        "bodyBase64" to "",
-        "url" to e.customSchemeUrl,
-        "ok" to false,
-        "redirected" to true,
-        "type" to "opaqueredirect"
-      )
+      return FetchResponse().apply {
+        this.status = response.code
+        this.statusText = statusText
+        this.headers = headersArray
+        this.bodyBase64 = bodyBase64
+        this.url = response.request.url.toString()
+        this.ok = (response.code in 200..299)
+        this.redirected = wasRedirected
+        this.type = "basic"
+      }
     } catch (e: IOException) {
-      android.util.Log.e("ExpoFetcher", "performFetch ERROR: ${e.message}", e)
       throw Exception("Network request failed: ${e.message}")
     }
   }

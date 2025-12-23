@@ -5,26 +5,26 @@ import expo.modules.kotlin.records.Record
 
 class FetchResponse : Record {
   @Field
-  val status: Int = 0
+  var status: Int = 0
 
   @Field
-  val statusText: String = ""
+  var statusText: String = ""
 
   @Field
-  val headers: List<String> = emptyList()
+  var headers: List<String> = emptyList()
 
   @Field
-  val bodyBase64: String = ""
+  var bodyBase64: String = ""
 
   @Field
-  val url: String = ""
+  var url: String = ""
 
   @Field
-  val ok: Boolean = false
+  var ok: Boolean = false
 
   @Field
-  val redirected: Boolean = false
+  var redirected: Boolean = false
 
   @Field
-  val type: String = "basic"
+  var type: String = "basic"
 }
