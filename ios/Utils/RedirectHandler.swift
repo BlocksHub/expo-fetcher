@@ -24,9 +24,6 @@ final class RedirectHandler: NSObject, URLSessionTaskDelegate {
     newRequest request: URLRequest,
     completionHandler: @escaping (URLRequest?) -> Void
   ) {
-    let redirectUrl = request.url?.absoluteString ?? ""
-    print("[ExpoFetcher] RedirectHandler: redirect \(response.statusCode) -> \(redirectUrl)")
-
     if let url = response.url {
         let headerFields = response.allHeaderFields as? [String: String] ?? [:]
         let cookies = HTTPCookie.cookies(withResponseHeaderFields: headerFields, for: url)
@@ -34,12 +31,10 @@ final class RedirectHandler: NSObject, URLSessionTaskDelegate {
     }
 
     if !followRedirects {
-      print("[ExpoFetcher] RedirectHandler: ⛔ manual mode — stopping redirection")
       completionHandler(nil)
       return
     }
 
-    print("[ExpoFetcher] RedirectHandler: ✅ following HTTP redirect")
     completionHandler(request)
   }
 }

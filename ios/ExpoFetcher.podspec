@@ -15,7 +15,7 @@ Pod::Spec.new do |s|
     :tvos => '15.1'
   }
   s.swift_version  = '5.9'
-  s.source         = { git: 'https://github.com/tryon-dev/expo-fetcher' }
+  s.source         = { git: 'https://github.com/blockshub/expo-fetcher' }
   s.static_framework = true
 
   s.dependency 'ExpoModulesCore'

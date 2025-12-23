@@ -3,76 +3,75 @@ export function formatFetchError(error: unknown, context?: {
   method?: string;
   headers?: Record<string, string>;
 }): string {
-  const errorMessage = error instanceof Error ? error.message : String(error);
-  const errorStack = error instanceof Error ? error.stack : undefined;
+  const baseError = error instanceof Error ? error : new Error(String(error));
+  
+  const parts: string[] = [];
+  parts.push(`[FetchError]: ${baseError.message}`);
 
-  let formattedMessage = '\n' + '='.repeat(60) + '\n';
-  formattedMessage += '🚨 FETCH ERROR DETAILS\n';
-  formattedMessage += '='.repeat(60) + '\n';
-  
-  if (context?.url) {
-    formattedMessage += `📍 URL: ${context.url}\n`;
+  if (context) {
+    const { method, url, headers } = context;
+    if (method || url) {
+      parts.push(`Request: ${method || 'GET'} ${url || 'UNKNOWN'}`);
+    }
+    
+    if (headers && Object.keys(headers).length > 0) {
+      try {
+        parts.push(`Headers: ${JSON.stringify(headers)}`);
+      } catch {
+        parts.push('Headers: [Unable to stringify]');
+      }
+    }
   }
-  
-  if (context?.method) {
-    formattedMessage += `🔧 Method: ${context.method}\n`;
-  }
-  
-  if (context?.headers) {
-    formattedMessage += `📋 Headers:\n`;
-    Object.entries(context.headers).forEach(([key, value]) => {
-      formattedMessage += `   ${key}: ${value}\n`;
-    });
-  }
-  
-  formattedMessage += `\n❌ Error Message:\n${errorMessage}\n`;
-  
-  if (errorStack) {
-    formattedMessage += `\n📚 Stack Trace:\n${errorStack}\n`;
-  }
-  
-  formattedMessage += '\n💡 Common Solutions:\n';
-  formattedMessage += '   1. Verify the URL is complete (https://example.com/path)\n';
-  formattedMessage += '   2. Check your internet connection\n';
-  formattedMessage += '   3. Ensure the server is accessible\n';
-  formattedMessage += '   4. Check for CORS issues (web only)\n';
-  formattedMessage += '='.repeat(60) + '\n';
 
-  return formattedMessage;
+  if (baseError.stack) {
+    parts.push(`Stack Trace: ${baseError.stack}`);
+  }
+
+  return parts.join('\n');
 }
 
 export function validateUrl(url: string): { valid: boolean; error?: string; details?: string } {
-  if (!url || url.trim() === '') {
+  if (!url || !url.trim()) {
     return {
       valid: false,
-      error: 'URL is empty',
-      details: 'Provide a non-empty URL string'
-    };
-  }
-
-  if (!url.startsWith('http://') && !url.startsWith('https://')) {
-    return {
-      valid: false,
-      error: 'Missing protocol',
-      details: `URL must start with http:// or https://. Received: "${url}"`
+      error: 'Empty URL',
+      details: 'The provided URL string is empty or null.'
     };
   }
 
   try {
-    const urlObj = new URL(url);
-    if (!urlObj.hostname) {
+    const parsedUrl = new URL(url);
+    
+    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
       return {
         valid: false,
-        error: 'Missing hostname',
-        details: `URL must include a hostname. Received: "${url}"`
+        error: 'Unsupported Protocol',
+        details: `URL protocol must be http: or https:. Received: "${parsedUrl.protocol}"`
       };
     }
+
+    if (!parsedUrl.hostname) {
+      return {
+        valid: false,
+        error: 'Missing Hostname',
+        details: 'The URL does not contain a valid hostname.'
+      };
+    }
+
     return { valid: true };
   } catch (e) {
+    if (!url.match(/^[a-zA-Z]+:\/\//)) {
+       return {
+        valid: false,
+        error: 'Invalid Format',
+        details: 'URL appears to be missing a protocol (e.g., https://). ' + (e instanceof Error ? e.message : String(e))
+      };
+    }
+
     return {
       valid: false,
-      error: 'Invalid URL format',
-      details: `${e instanceof Error ? e.message : String(e)}. Received: "${url}"`
+      error: 'Malformed URL',
+      details: e instanceof Error ? e.message : String(e)
     };
   }
 }

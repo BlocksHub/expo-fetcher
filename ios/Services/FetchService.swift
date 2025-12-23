@@ -16,8 +16,6 @@ final class FetchService {
     
     request.httpShouldHandleCookies = false
 
-    print("[ExpoFetcher] performFetch START: \(request.httpMethod ?? "GET") \(url)")
-
     if let headers = options?.headers {
       for (k, v) in headers { request.setValue(v, forHTTPHeaderField: k) }
     }
