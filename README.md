@@ -1,6 +1,6 @@
 <div align="center">
   <br />
-  <img src=".github/assets/banner.png" alt="Expo Fetcher Banner" width="100%" />
+  <img width="100%" alt="image" src="https://github.com/user-attachments/assets/5cb13bd8-119f-45e4-9762-aa3e9a3ac184" />
   <br />
   <br />
 
