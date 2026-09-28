@@ -7,10 +7,11 @@ import {
   type FetchErrorRequestInfo,
 } from './errors';
 import { Headers } from './Headers';
-import { getNativeModule, type NativeRequestInit, type NativeSession } from './native';
+import { getNativeModule, toNativeParts, type NativeRequestInit, type NativeSession } from './native';
 import { Request, type RequestInit } from './Request';
 import { Response } from './Response';
 import { getSession, toNativeConfig } from './session';
+import { statusText } from './statusText';
 import { redactUrl } from './url';
 
 let defaultSession: NativeSession | null = null;
@@ -118,8 +119,9 @@ export async function send(session: NativeSession, request: Request): Promise<Re
         );
       }, ms);
     }
+    const parts = toNativeParts(encoded.parts);
     nativeRequest
-      .start(session, request.url, nativeInit, encoded.bytes, encoded.parts)
+      .start(session, request.url, nativeInit, encoded.bytes, parts?.layout ?? null, parts?.chunks ?? null)
       .then(resolve, (error) => {
         reject(signal?.aborted ? abortReason(signal) : fromNativeError(error, info));
       });
@@ -146,7 +148,7 @@ export async function send(session: NativeSession, request: Request): Promise<Re
 
   return Response._fromNetwork({
     status,
-    statusText: nativeResponse.statusText,
+    statusText: statusText(status, nativeResponse.statusText),
     headers: Headers.fromPairs(nativeResponse._rawHeaders),
     url: nativeResponse.url || request.url,
     redirected: nativeResponse.redirected,

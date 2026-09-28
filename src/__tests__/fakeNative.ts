@@ -130,7 +130,16 @@ export class FakeRequest {
   canceled = false;
   constructor(public response: FakeResponse) {}
 
-  async start(session: FakeSession, url: string, init: any, body: Uint8Array | null, parts: any[] | null) {
+  async start(
+    session: FakeSession,
+    url: string,
+    init: any,
+    body: Uint8Array | null,
+    layout: string[] | null,
+    chunks: Uint8Array[] | null
+  ) {
+    let next = 0;
+    const parts = layout ? layout.map((uri) => (uri === '' ? { data: chunks![next++] } : { uri })) : null;
     const call = { url, init, body, parts, session };
     calls.push(call);
     const reply = await handler(call);

@@ -25,6 +25,28 @@ export interface NativeBodyPart {
   uri?: string;
 }
 
+export interface NativeParts {
+  layout: string[];
+  chunks: Uint8Array[];
+}
+
+export function toNativeParts(parts: NativeBodyPart[] | null): NativeParts | null {
+  if (!parts) {
+    return null;
+  }
+  const layout: string[] = [];
+  const chunks: Uint8Array[] = [];
+  for (const part of parts) {
+    if (part.uri !== undefined) {
+      layout.push(part.uri);
+    } else if (part.data) {
+      layout.push('');
+      chunks.push(part.data);
+    }
+  }
+  return { layout, chunks };
+}
+
 export type NativeResponseEvents = {
   didReceiveResponseData(data: Uint8Array): void;
   didComplete(): void;
@@ -58,7 +80,8 @@ export declare class NativeRequest extends SharedObject {
     url: string,
     init: NativeRequestInit,
     body: Uint8Array | null,
-    parts: NativeBodyPart[] | null
+    partLayout: string[] | null,
+    partChunks: Uint8Array[] | null
   ): Promise<void>;
   cancel(): Promise<void>;
 }
