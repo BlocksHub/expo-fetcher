@@ -64,7 +64,7 @@ export default function App() {
 
         {bench.length > 0 || phase === 'benchmarking' ? (
           <Text style={[styles.section, { color: colors.text }]}>
-            Benchmark, median of 5 runs in ms{phase === 'benchmarking' ? ' (running)' : ''}
+            Benchmark, median of 10 runs{phase === 'benchmarking' ? ' (running)' : ''}
           </Text>
         ) : null}
         {bench.map((row) => (
@@ -72,8 +72,8 @@ export default function App() {
             <View style={styles.rowBody}>
               <Text style={[styles.rowTitle, { color: colors.text }]}>{row.name}</Text>
               <Text style={[styles.meta, { color: colors.muted }]}>
-                expo-fetcher {fmt(row.expoFetcher)} · RN fetch {fmt(row.globalFetch)} · expo/fetch{' '}
-                {fmt(row.expoFetch)}
+                {row.unit}: expo-fetcher {fmt(row.expoFetcher)} · RN fetch {fmt(row.globalFetch)} ·
+                expo/fetch {fmt(row.expoFetch)}
               </Text>
             </View>
           </View>
@@ -94,7 +94,7 @@ export default function App() {
   );
 }
 
-const fmt = (ms: number) => (ms < 0 ? 'failed' : String(ms));
+const fmt = (value: number | null) => (value === null ? 'n/a' : value < 0 ? 'failed' : String(value));
 
 const palette = {
   light: { background: '#ffffff', text: '#111111', muted: '#555555', border: '#dddddd', pass: '#1b7a2f', fail: '#b3261e' },

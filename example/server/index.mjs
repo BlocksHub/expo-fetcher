@@ -101,6 +101,19 @@ const server = createServer(async (req, res) => {
         }
         return json(res, 200, { parts, contentLength: req.headers['content-length'] ?? null });
       }
+      case '/json': {
+        const kb = Number(q.get('kb') ?? 1024);
+        const items = [];
+        let size = 2;
+        for (let i = 0; size < kb * 1024; i++) {
+          const item = { id: i, name: `item ${i}`, tags: ['a', 'b', 'c'], price: i * 1.5, active: i % 2 === 0 };
+          size += JSON.stringify(item).length + 1;
+          items.push(item);
+        }
+        const body = Buffer.from(JSON.stringify(items));
+        res.writeHead(200, { 'content-type': 'application/json', 'content-length': body.length });
+        return res.end(body);
+      }
       case '/bytes': {
         const body = patternBytes(Number(q.get('n') ?? 256));
         res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': body.length });

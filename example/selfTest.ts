@@ -245,9 +245,19 @@ export async function runSelfTest(onResult: (result: CaseResult) => void): Promi
   return results;
 }
 
-export type BenchRow = { name: string; expoFetcher: number; globalFetch: number; expoFetch: number };
+export type Contender = 'expoFetcher' | 'globalFetch' | 'expoFetch';
+export type BenchRow = { name: string; unit: string } & Record<Contender, number | null>;
+
+type AnyFetch = (url: string, init?: any) => Promise<any>;
+
+const contenders: [Contender, AnyFetch][] = [
+  ['expoFetcher', fetch as AnyFetch],
+  ['globalFetch', globalThis.fetch as AnyFetch],
+  ['expoFetch', expoFetch as AnyFetch],
+];
 
 async function median(runs: number, task: () => Promise<unknown>): Promise<number> {
+  await task();
   await task();
   const times: number[] = [];
   for (let i = 0; i < runs; i++) {
@@ -256,39 +266,91 @@ async function median(runs: number, task: () => Promise<unknown>): Promise<numbe
     times.push(performance.now() - start);
   }
   times.sort((a, b) => a - b);
-  return Math.round(times[Math.floor(times.length / 2)]);
+  return Math.round(times[Math.floor(times.length / 2)] * 10) / 10;
 }
 
-type AnyFetch = (url: string, init?: any) => Promise<{ arrayBuffer(): Promise<ArrayBuffer>; json(): Promise<any> }>;
+async function longestFreeze(task: () => Promise<unknown>): Promise<number> {
+  let last = performance.now();
+  let longest = 0;
+  const timer = setInterval(() => {
+    const now = performance.now();
+    longest = Math.max(longest, now - last);
+    last = now;
+  }, 4);
+  await task();
+  longest = Math.max(longest, performance.now() - last);
+  clearInterval(timer);
+  return Math.round(longest);
+}
 
-const clients: [keyof Omit<BenchRow, 'name'>, AnyFetch][] = [
-  ['expoFetcher', fetch as AnyFetch],
-  ['globalFetch', globalThis.fetch as AnyFetch],
-  ['expoFetch', expoFetch as AnyFetch],
+let uploadFile: File | null = null;
+function bigFile(): File {
+  uploadFile ??= writeTempFile('bench-upload.bin', 10 * 1024 * 1024);
+  return uploadFile;
+}
+
+type Bench = {
+  name: string;
+  unit: 'ms' | 'ms freeze';
+  task: (f: AnyFetch, who: Contender) => Promise<unknown>;
+  measure?: 'time' | 'blocking';
+  skip?: Contender[];
+};
+
+const benchmarks: Bench[] = [
+  { name: 'Download 1 MB binary (arrayBuffer)', unit: 'ms', task: (f) => f(`${HOST}/bytes?n=${1024 * 1024}`).then((r) => r.arrayBuffer()) },
+  { name: 'Download 20 MB binary (arrayBuffer)', unit: 'ms', task: (f) => f(`${HOST}/bytes?n=${20 * 1024 * 1024}`).then((r) => r.arrayBuffer()) },
+  { name: 'Download and parse 1 MB JSON (json)', unit: 'ms', task: (f) => f(`${HOST}/json?kb=1024`).then((r) => r.json()) },
+  { name: 'Small JSON GET, one request', unit: 'ms', task: (f) => f(`${HOST}/echo`).then((r) => r.json()) },
+  { name: '100 parallel small JSON GETs', unit: 'ms', task: (f) => Promise.all(Array.from({ length: 100 }, (_, i) => f(`${HOST}/echo?i=${i}`).then((r) => r.json()))) },
+  { name: 'Upload 5 MB from memory (Uint8Array)', unit: 'ms', task: (f) => f(`${HOST}/verify`, { method: 'POST', body: pattern(5 * 1024 * 1024) }).then((r) => r.json()) },
+  {
+    name: 'Upload 10 MB file from disk (multipart)',
+    unit: 'ms',
+    skip: ['expoFetch'],
+    task: (f) => {
+      const form = new FormData();
+      form.append('file', { uri: bigFile().uri, name: 'bench.bin', type: 'application/octet-stream' } as any);
+      return f(`${HOST}/verify-multipart`, { method: 'POST', body: form }).then((r) => r.json());
+    },
+  },
+  {
+    name: 'Longest JS thread freeze during a 20 MB download',
+    unit: 'ms freeze',
+    measure: 'blocking',
+    task: (f) => f(`${HOST}/bytes?n=${20 * 1024 * 1024}`).then((r) => r.arrayBuffer()),
+  },
 ];
 
-const benchmarks: [string, (f: AnyFetch) => Promise<unknown>][] = [
-  ['Download 1 MB (arrayBuffer)', (f) => f(`${HOST}/bytes?n=${1024 * 1024}`).then((r) => r.arrayBuffer())],
-  ['Download 20 MB (arrayBuffer)', (f) => f(`${HOST}/bytes?n=${20 * 1024 * 1024}`).then((r) => r.arrayBuffer())],
-  ['100 parallel small JSON GETs', (f) => Promise.all(Array.from({ length: 100 }, (_, i) => f(`${HOST}/echo?i=${i}`).then((r) => r.json())))],
-  ['Upload 5 MB (Uint8Array)', (f) => f(`${HOST}/verify`, { method: 'POST', body: pattern(5 * 1024 * 1024) }).then((r) => r.json())],
-];
-
-export async function runBenchmark(onRow: (row: BenchRow) => void, runs = 5): Promise<BenchRow[]> {
+export async function runBenchmark(onRow: (row: BenchRow) => void, runs = 10): Promise<BenchRow[]> {
   const rows: BenchRow[] = [];
-  for (const [name, task] of benchmarks) {
-    const row: BenchRow = { name, expoFetcher: -1, globalFetch: -1, expoFetch: -1 };
-    for (const [key, f] of clients) {
+  for (const bench of benchmarks) {
+    const row: BenchRow = { name: bench.name, unit: bench.unit, expoFetcher: null, globalFetch: null, expoFetch: null };
+    for (const [who, f] of contenders) {
+      if (bench.skip?.includes(who)) continue;
       try {
-        row[key] = await median(runs, () => task(f));
+        if (bench.measure === 'blocking') {
+          const samples: number[] = [];
+          for (let i = 0; i < 5; i++) samples.push(await longestFreeze(() => bench.task(f, who)));
+          samples.sort((a, b) => a - b);
+          row[who] = samples[2];
+        } else {
+          row[who] = await median(runs, () => bench.task(f, who));
+        }
       } catch {
-        row[key] = -1;
+        row[who] = -1;
       }
     }
     rows.push(row);
     onRow(row);
   }
-  await report(`bench-${Platform.OS}`, { platform: Platform.OS, version: Platform.Version, runs, rows });
+  await report(`bench-${Platform.OS}`, {
+    platform: Platform.OS,
+    version: Platform.Version,
+    dev: __DEV__,
+    runs,
+    rows,
+  });
   return rows;
 }
 
