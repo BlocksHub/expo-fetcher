@@ -1,6 +1,6 @@
 <div align="center">
   <br />
-  <img width="100%" alt="image" src="https://github.com/user-attachments/assets/5cb13bd8-119f-45e4-9762-aa3e9a3ac184" />
+  <img width="100%" alt="expo-fetcher" src="https://github.com/user-attachments/assets/5cb13bd8-119f-45e4-9762-aa3e9a3ac184" />
   <br />
   <br />
 
@@ -8,159 +8,132 @@
   [![License](https://img.shields.io/npm/l/expo-fetcher?style=flat-square&color=gray)](LICENSE)
   [![Platform - Android](https://img.shields.io/badge/platform-Android-3ddc84.svg?style=flat-square&logo=android)](https://www.android.com)
   [![Platform - iOS](https://img.shields.io/badge/platform-iOS-000000.svg?style=flat-square&logo=apple)](https://developer.apple.com/ios)
-  [![TypeScript](https://img.shields.io/badge/types-TypeScript-3178C6.svg?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
-
-  <h3 align="center">The Missing Native Fetch for Expo</h3>
-
-  <p align="center">
-    Use the power of native networking libraries with a standard <code>fetch</code> API.
-    <br />
-    Handle cookies and redirects with ease.
-    <br />
-    <br />
-    <a href="#-installation"><strong>Installation</strong></a> ·
-    <a href="#-usage"><strong>Usage</strong></a> ·
-    <a href="#-api-reference"><strong>API Reference</strong></a> ·
-    <a href="#-contributing"><strong>Contributing</strong></a>
-  </p>
 </div>
 
----
+A standard `fetch` for Expo, running on URLSession (iOS) and OkHttp (Android). It adds streaming, progress, file uploads from disk, retries and SSL pinning.
 
-<br />
-
-## 🌟 Why Expo Fetcher?
-
-`expo-fetcher` bridges the gap between the JavaScript `fetch` API and native networking capabilities ensuring your apps are robust, secure, and performant.
-
-| Feature | Description |
-| :--- | :--- |
-| **🍪 Advanced Cookie Support** | Persistent cookie jar on Android. Full visibility of `Set-Cookie` headers on iOS. |
-| **⚡ Native Networking** | Uses platform-native networking stacks (NSURLSession/OkHttp) for maximum reliability. |
-| **⤵️ Smart Redirects** | Fine-grained control over redirect policies: `follow`, `error`, or `manual`. |
-| **✨ Standard API** | Drop-in replacement for `fetch`. No new concepts to learn. |
-| **🔒 Type Safe** | Written in TypeScript with complete definitions included. |
-
-<br />
-
-## 📦 Installation
-
-Add the package to your Expo or React Native project.
+## Install
 
 ```bash
-# Using npm
-npm install expo-fetcher
-
-# Using yarn
-yarn add expo-fetcher
-
-# Using expo
 npx expo install expo-fetcher
 ```
 
-<br />
+Needs a development build (not Expo Go), Expo SDK 54+, iOS 15.1+, Android API 24+.
 
-## 🛠 Usage
+## Usage
 
-### Basic Fetch
-
-It works just like the standard `fetch` you know and love.
-
-```typescript
+```ts
 import { fetch } from 'expo-fetcher';
 
-// Simple GET request
-const response = await fetch('https://api.example.com/data');
-const json = await response.json();
+const response = await fetch('https://api.example.com/users/42', {
+  headers: { Authorization: `Bearer ${token}` },
+  timeout: 10_000,
+});
+const user = await response.json();
 ```
 
-### Advanced POST with Headers
+`Headers`, `Request`, `Response`, `AbortSignal`, `redirect`, `credentials` and `cache` work as in a browser.
 
-```typescript
-import { fetch } from 'expo-fetcher';
+### Stream, progress, files
 
-const uploadData = async () => {
-  try {
-    const response = await fetch('https://api.example.com/users', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer <YOUR_TOKEN>',
-      },
-      body: JSON.stringify({ name: 'John Doe', role: 'Developer' }),
-    });
+```ts
+// Read the body as it arrives
+for await (const chunk of response.stream()) {
+  // chunk is a Uint8Array
+}
 
-    if (response.ok) {
-      console.log('Success:', await response.json());
-    }
-  } catch (error) {
-    console.error('Request failed:', error);
-  }
-};
+// Progress callbacks, throttled to one every 50 ms
+await fetch(url, { method: 'PUT', body: bytes, onUploadProgress: ({ loaded, total }) => {} });
+
+// Upload a file from disk, without loading it in JS
+const form = new FormData();
+form.append('photo', { uri: photo.uri, name: 'photo.jpg', type: 'image/jpeg' });
+await fetch(url, { method: 'POST', body: form });
+await fetch(presignedUrl, { method: 'PUT', body: { uri: video.uri, type: 'video/mp4' } });
 ```
 
-### Cookie Management
+### Client
 
-Authentication cookies set by the server are automatically stored and managed on Android. On iOS, you have full access to `Set-Cookie` headers to manage sessions manually if needed.
+```ts
+import { createClient } from 'expo-fetcher';
 
-> **Note**: Android maintains a persistent cookie jar between requests. iOS requests use isolated sessions, so cookies are not automatically carried over to subsequent requests.
+const api = createClient({
+  baseURL: 'https://api.example.com/v2',
+  timeout: 15_000,
+  retry: { limit: 3 },
+  hooks: {
+    beforeRequest: [(request) => request.headers.set('authorization', `Bearer ${getToken()}`)],
+  },
+});
 
-```typescript
-import { clearCookies } from 'expo-fetcher';
-
-const handleLogout = async () => {
-  // Clears the native cookie storage (Android only)
-  await clearCookies();
-  console.log('Session cleared');
-};
+const orders = await api.json<Order[]>('/orders', { searchParams: { status: 'open' } });
+await api.post('/orders', { json: { sku: 'A-100', quantity: 2 } });
 ```
 
-<br />
+Other options: `headers`, `throwHttpErrors`, `dedupe`, `cookies`, `idleTimeout`, `maxConnectionsPerHost`. Retries only apply to idempotent methods, on network errors and 408, 413, 429, 5xx, and honour `Retry-After`.
 
-## 📚 API Reference
+### SSL pinning
 
-### `fetch(input, init)`
+```ts
+const bank = createClient({
+  pinning: {
+    'api.bank.example': ['sha256/<current key hash>', 'sha256/<backup key hash>'],
+  },
+});
+```
 
-Performs a network request.
+Get a host's pin with:
 
-| Parameter | Type | Required | Description |
-| :--- | :--- | :---: | :--- |
-| `input` | `string` \| `URL` \| `Request` | ✅ | The URL or Request object. |
-| `init` | `RequestInit` | ❌ | Optional configuration object. |
+```bash
+openssl s_client -connect api.bank.example:443 -servername api.bank.example </dev/null 2>/dev/null | openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64
+```
 
-#### `RequestInit` Options
+Always ship a backup pin. On iOS, send all traffic for a pinned host through the pinned client: iOS can resume a TLS session opened earlier without pins, and a resumed session carries no certificate to check.
 
-| Option | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `method` | `'GET'` \| `'POST'` \| `'PUT'` \| `'DELETE'` \| `'PATCH'` \| `'HEAD'` \| `'OPTIONS'` | `'GET'` | The HTTP method to use. |
-| `headers` | `Headers` \| `Record<string, string>` | `{}` | Request headers. |
-| `body` | `string` \| `ArrayBuffer` \| `Uint8Array` | `undefined` | The body content. |
-| `redirect` | `'follow'` \| `'error'` \| `'manual'` | `'follow'` | Redirect handling policy. |
+### Cookies
 
-<br />
+Cookies are shared with React Native's fetch and WebViews, and persist across launches.
 
-### `clearCookies()`
+```ts
+import { cookies } from 'expo-fetcher';
 
-Clears all cookies stored in the native container.
+await cookies.set('https://example.com', { name: 'consent', value: 'yes' });
+await cookies.get('https://example.com');
+await cookies.clear();
+```
 
-| Return Type | Description |
-| :--- | :--- |
-| `Promise<void>` | Resolves when the Android cookie jar has been emptied. |
+### Errors
 
-<br />
+Failures throw a `FetchError` (a `TypeError`) with a `code`: `ERR_NETWORK`, `ERR_TIMEOUT`, `ERR_PINNING`, `ERR_TLS`, `ERR_REDIRECT`, `ERR_INVALID_URL`, `ERR_FILE`, `ERR_BODY_USED`, `ERR_BODY_READ` or `ERR_HTTP`. Messages never include request headers or query strings.
 
-## 🤝 Contributing
+## Performance
 
-We welcome contributions! Please see the guidelines below.
+Compared with React Native's built-in `fetch`, Release build, iPhone 17 Pro simulator, local server, median of 10 to 30 runs:
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+| Task | expo-fetcher | RN fetch |
+| :-- | --: | --: |
+| One GET, POST, PUT or DELETE with small JSON | ~1 ms | 16.7 ms |
+| 50 GETs one after another | 31.5 ms | 833 ms |
+| 100 GETs in parallel | 41.7 ms | 50.2 ms |
+| Download 20 MB | 21.7 ms | 981 ms |
+| Upload 5 MB | 75.4 ms | 400 ms |
 
-<br />
+A local server hides network latency, so these numbers show the client's own overhead. Run the benchmark in [`example/`](example) on your devices. Android numbers are not measured yet.
 
-## 📄 License
+## Upgrading from 0.9
 
-This project is licensed under the **MIT License**.
+- Errors are now `FetchError` with a `code`.
+- iOS now stores and sends cookies, like Android. Use `credentials: 'omit'` to opt out.
+- `formatFetchError` and `validateUrl` were removed.
+
+## Development
+
+```bash
+npm test                                     # unit tests
+cd example && npm install && npm run server  # test server
+npx expo run:ios                             # in a second terminal
+```
+
+## License
+
+MIT
