@@ -295,13 +295,39 @@ type Bench = {
   task: (f: AnyFetch, who: Contender) => Promise<unknown>;
   measure?: 'time' | 'blocking';
   skip?: Contender[];
+  runs?: number;
 };
 
+const smallJson = { id: 42, name: 'Ada Lovelace', email: 'ada@example.com', roles: ['admin', 'editor'], active: true };
+const jsonHeaders = { 'content-type': 'application/json', accept: 'application/json' };
+const withBody = (method: string): Bench => ({
+  name: `${method} small JSON body`,
+  unit: 'ms',
+  runs: 30,
+  task: (f) => f(`${HOST}/echo`, { method, headers: jsonHeaders, body: JSON.stringify(smallJson) }).then((r) => r.json()),
+});
+
 const benchmarks: Bench[] = [
+  { name: 'GET small JSON', unit: 'ms', runs: 30, task: (f) => f(`${HOST}/echo`).then((r) => r.json()) },
+  { name: 'GET with query string and headers', unit: 'ms', runs: 30, task: (f) => f(`${HOST}/echo?page=2&limit=20&sort=name`, { headers: { authorization: 'Bearer test-token', accept: 'application/json' } }).then((r) => r.json()) },
+  withBody('POST'),
+  withBody('PUT'),
+  withBody('PATCH'),
+  { name: 'DELETE, no body', unit: 'ms', runs: 30, task: (f) => f(`${HOST}/echo?id=42`, { method: 'DELETE' }).then((r) => r.json()) },
+  { name: 'HEAD', unit: 'ms', runs: 30, task: (f) => f(`${HOST}/bytes?n=1000`, { method: 'HEAD' }).then((r) => r.text()) },
+  { name: 'OPTIONS', unit: 'ms', runs: 30, task: (f) => f(`${HOST}/echo`, { method: 'OPTIONS' }).then((r) => r.text()) },
+  { name: 'GET 10 KB JSON', unit: 'ms', runs: 30, task: (f) => f(`${HOST}/json?kb=10`).then((r) => r.json()) },
+  { name: 'GET 100 KB JSON', unit: 'ms', runs: 20, task: (f) => f(`${HOST}/json?kb=100`).then((r) => r.json()) },
+  {
+    name: '50 sequential GETs, one after another',
+    unit: 'ms',
+    task: async (f) => {
+      for (let i = 0; i < 50; i++) await f(`${HOST}/echo?i=${i}`).then((r) => r.json());
+    },
+  },
   { name: 'Download 1 MB binary (arrayBuffer)', unit: 'ms', task: (f) => f(`${HOST}/bytes?n=${1024 * 1024}`).then((r) => r.arrayBuffer()) },
   { name: 'Download 20 MB binary (arrayBuffer)', unit: 'ms', task: (f) => f(`${HOST}/bytes?n=${20 * 1024 * 1024}`).then((r) => r.arrayBuffer()) },
   { name: 'Download and parse 1 MB JSON (json)', unit: 'ms', task: (f) => f(`${HOST}/json?kb=1024`).then((r) => r.json()) },
-  { name: 'Small JSON GET, one request', unit: 'ms', task: (f) => f(`${HOST}/echo`).then((r) => r.json()) },
   { name: '100 parallel small JSON GETs', unit: 'ms', task: (f) => Promise.all(Array.from({ length: 100 }, (_, i) => f(`${HOST}/echo?i=${i}`).then((r) => r.json()))) },
   { name: 'Upload 5 MB from memory (Uint8Array)', unit: 'ms', task: (f) => f(`${HOST}/verify`, { method: 'POST', body: pattern(5 * 1024 * 1024) }).then((r) => r.json()) },
   {
@@ -335,7 +361,7 @@ export async function runBenchmark(onRow: (row: BenchRow) => void, runs = 10): P
           samples.sort((a, b) => a - b);
           row[who] = samples[2];
         } else {
-          row[who] = await median(runs, () => bench.task(f, who));
+          row[who] = await median(bench.runs ?? runs, () => bench.task(f, who));
         }
       } catch {
         row[who] = -1;
